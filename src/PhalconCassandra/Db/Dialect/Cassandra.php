@@ -128,4 +128,14 @@ class Cassandra extends Dialect implements DialectInterface
         
     }
 
+    public function supportsSavepoints()
+    {
+        return false;
+    }
+
+    public function supportsReleaseSavepoints()
+    {
+        return false;
+    }
+
 }

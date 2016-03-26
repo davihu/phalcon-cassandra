@@ -10,12 +10,16 @@
 
 namespace PhalconCassandra\Db\Adapter;
 
-use PhalconCassandra\Db\Adapter\Cassandra\Exception,
+use PhalconCassandra\Db\Exception\Cassandra as CException,
     Phalcon\Db\Adapter,
     Phalcon\Db\AdapterInterface,
     Phalcon\Db\ResultInterface,
+    Phalcon\Events\ManagerInterface,
     Cassandra\Cluster\Builder,
-    Cassandra\Exception as ExceptionInterface;
+    Cassandra\SimpleStatement,
+    Cassandra\BatchStatement,
+    Cassandra\ExecutionOptions,
+    Cassandra\Exception as BaseException;
 
 /**
  * Cassandra DB adapter for Phalcon
@@ -33,14 +37,36 @@ class Cassandra extends Adapter implements AdapterInterface
     protected $_session;
 
     /**
+     * @var \Cassandra\BatchStatement $_batch - transaction batch 
+     */
+    protected $_batch;
+
+    /**
+     * @var int default consistency level
+     */
+    protected $_defaultConsistency = \Cassandra::CONSISTENCY_LOCAL_ONE;
+
+    /**
+     * @var int next execute or query consistency level
+     */
+    protected $_consistency;
+
+    /**
+     *
+     * @var int $_affectedRows - last affected rows
+     */
+    protected $_affectedRows;
+
+    /**
      * Creates new Cassandra adapter
      *  
      * @author  David Hübner <david.hubner at google.com>
      * @param   array $descriptor - connection description
-     * @throws  \PhalconCassandra\Db\Adapter\Cassandra\Exception
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
     public function __construct($descriptor)
     {
+        $this->_transactionLevel = 0;
         $descriptor['dialectClass'] = 'PhalconCassandra\\Db\\Dialect\\Cassandra';
         parent::__construct($descriptor);
     }
@@ -51,12 +77,12 @@ class Cassandra extends Adapter implements AdapterInterface
      * @author  David Hübner <david.hubner at google.com>
      * @param   array $descriptor - connection description, default null
      * @return  bool   
-     * @throws  \PhalconCassandra\Db\Adapter\Cassandra\Exception
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
     public function connect($descriptor = null)
     {
         if ($this->_session) {
-            throw new Exception('Connection already established');
+            throw new CException('Connection already established');
         }
 
         if (is_array($descriptor)) {
@@ -66,7 +92,7 @@ class Cassandra extends Adapter implements AdapterInterface
         }
 
         if (empty($descriptor['keyspace'])) {
-            throw new Exception('Keyspace must be set');
+            throw new CException('Keyspace must be set');
         }
 
         $cluster = new Builder();
@@ -81,6 +107,7 @@ class Cassandra extends Adapter implements AdapterInterface
 
         if (isset($descriptor['consistency'])) {
             $cluster->withDefaultConsistency($descriptor['consistency']);
+            $this->_defaultConsistency = $descriptor['consistency'];
         }
 
         if (isset($descriptor['pageSize'])) {
@@ -117,8 +144,8 @@ class Cassandra extends Adapter implements AdapterInterface
 
         try {
             $this->_session = $cluster->build()->connect($descriptor['keyspace']);
-        } catch (ExceptionInterface $e) {
-            throw new Exception($e->getMessage(), $e->getCode());
+        } catch (BaseException $e) {
+            throw new CException($e->getMessage(), $e->getCode());
         }
 
         return true;
@@ -159,10 +186,93 @@ class Cassandra extends Adapter implements AdapterInterface
      * @param   array $bindParams - bind parameters, default null
      * @param   array $bindTypes - bind types, default null
      * @return  \Phalcon\Db\ResultInterface | bool
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
     public function query($cqlStatement, $bindParams = null, $bindTypes = null)
     {
-        if ($this->_eventsManager) {
+        $statement = $this->_prepareStatement($cqlStatement, $bindParams, $bindTypes);
+
+        $params = [
+            'consistency' => $this->getConsistency()
+        ];
+
+        if ($bindParams) {
+            $params['arguments'] = $bindParams;
+        }
+
+        try {
+            $result = $this->_session->execute($statement, new ExecutionOptions($params));
+        } catch (BaseException $e) {
+            throw new CException($e->getMessage(), $e->getCode());
+        }
+
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_eventsManager->fire('db:afterQuery', $this, $bindParams);
+        }
+
+        $this->_consistency = null;
+
+        var_dump($result->first());
+    }
+
+    /**
+     * Sends SQL statements to the database server returning the success state.
+     * Use this method only when the SQL statement sent to the server doesn't return any rows
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @param   string $cqlStatement - CQL statement
+     * @param   array $bindParams - bind parameters, default null
+     * @param   array $bindTypes - bind types, default null
+     * @return  bool
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
+     */
+    public function execute($cqlStatement, $bindParams = null, $bindTypes = null)
+    {
+        $statement = $this->_prepareStatement($cqlStatement, $bindParams, $bindTypes);
+
+        if ($this->_transactionLevel) {
+            $this->_batch->add($statement, $bindParams);
+        } else {
+            $params = [
+                'consistency' => $this->getConsistency()
+            ];
+
+            if ($bindParams) {
+                $params['arguments'] = $bindParams;
+            }
+
+            try {
+                $this->_session->execute($statement, new ExecutionOptions($params));
+            } catch (BaseException $e) {
+                throw new CException($e->getMessage(), $e->getCode());
+            }
+        }
+
+        $this->_affectedRows = 1;
+
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_eventsManager->fire('db:afterQuery', $this, $bindParams);
+        }
+
+        $this->_consistency = null;
+        return true;
+    }
+
+    /**
+     * Internally executes CQL statement
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @param   string $cqlStatement - CQL statement
+     * @param   array $bindParams - bind parameters
+     * @param   array $bindTypes - bind types
+     * @return  \Cassandra\SimpleStatement
+     */
+    protected function _prepareStatement($cqlStatement, $bindParams, $bindTypes)
+    {
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_sqlStatement = $cqlStatement;
+            $this->_sqlVariables = $bindParams;
+            $this->_sqlBindTypes = $bindTypes;
             $result = $this->_eventsManager->fire(
                 'db:beforeQuery', $this, $bindParams
             );
@@ -170,16 +280,45 @@ class Cassandra extends Adapter implements AdapterInterface
                 return false;
             }
         }
+
+        $this->_affectedRows = 0;
+        return new SimpleStatement($cqlStatement);
     }
 
-    public function execute($sqlStatement, $placeholders = null, $dataTypes = null)
+    /**
+     * Gets consistency level for next statement execution
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @return  int
+     */
+    public function getConsistency()
     {
-        
+        return (is_null($this->_consistency) ? $this->_defaultConsistency : $this->_consistency);
     }
 
+    /**
+     * Sets consistency level for next statement execution
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @return  self
+     */
+    public function setConsistency($consistency)
+    {
+        $this->_consistency = $consistency;
+        return $this;
+    }
+
+    /**
+     * Returns an array of Column objects describing a table
+     *
+     * @author  David Hübner <david.hubner at google.com>
+     * @param   string $table
+     * @param   string $schema
+     * @return  \Phalcon\Db\ColumnInterface[] 
+     */
     public function describeColumns($table, $schema = null)
     {
-        
+        throw new CException('Not supported');
     }
 
     /**
@@ -207,69 +346,126 @@ class Cassandra extends Adapter implements AdapterInterface
     }
 
     /**
-     * Not supported
+     * Returns 0 if last executed query failed or 1 if was successfull
      *
      * @author  David Hübner <david.hubner at google.com>
-     * @return  bool
+     * @return  int
      */
     public function affectedRows()
     {
-        return false;
+        return $this->_affectedRows;
     }
 
     /**
      * Not supported
      *
      * @author  David Hübner <david.hubner at google.com>
-     * @return  bool
+     * @return  null
      */
     public function lastInsertId($sequenceName = null)
     {
-        return false;
+        return null;
     }
 
     /**
-     * Not supported, will be implemented as BATCH
+     * Starts new batch
+     *
+     * @author  David Hübner <david.hubner at google.com>
+     * @param   int $batchType - default \Cassandra::BATCH_LOGGED
+     * @return  bool
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
+     */
+    public function begin($batchType = \Cassandra::BATCH_LOGGED)
+    {
+        if (empty($this->_session)) {
+            return false;
+        }
+
+        if ($this->_transactionLevel) {
+            throw new CException('Nested transactions not supported');
+        }
+
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_eventsManager->fire('db:beginTransaction', $this);
+        }
+
+        $this->_transactionLevel = 1;
+        $this->_batch = new BatchStatement($type);
+        return true;
+    }
+
+    /**
+     * Executes active batch
      *
      * @author  David Hübner <david.hubner at google.com>
      * @return  bool
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
-    public function begin($nesting = true)
+    public function commit($nesting = false)
     {
-        return false;
+        if (empty($this->_session)) {
+            return false;
+        }
+
+        if (empty($this->_transactionLevel)) {
+            throw new CException('There is no active batch');
+        }
+
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_eventsManager->fire('db:db:commitTransaction', $this);
+        }
+
+        $params = [
+            'consistency' => $this->getConsistency()
+        ];
+
+        try {
+            $this->_session->execute($this->_batch, new ExecutionOptions($params));
+        } catch (BaseException $e) {
+            throw new CException($e->getMessage(), $e->getCore());
+        }
+
+        $this->_transactionLevel = 0;
+        $this->_batch = null;
+        $this->_consistency = null;
+        return true;
     }
 
     /**
-     * Not supported, will be implemented as BATCH
+     * Discards active batch
      *
      * @author  David Hübner <david.hubner at google.com>
      * @return  bool
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
-    public function commit($nesting = true)
+    public function rollback($nesting = false)
     {
-        return false;
+        if (empty($this->_session)) {
+            return false;
+        }
+
+        if (empty($this->_transactionLevel)) {
+            throw new CException('There is no active batch');
+        }
+
+        if ($this->_eventsManager instanceof ManagerInterface) {
+            $this->_eventsManager->fire('db:rollbackTransaction', $this);
+        }
+
+        $this->_transactionLevel = 0;
+        $this->_batch = null;
+        return true;
     }
 
     /**
-     * Not supported, will be implemented as BATCH
-     *
-     * @author  David Hübner <david.hubner at google.com>
-     * @return  bool
-     */
-    public function rollback($nesting = true)
-    {
-        return false;
-    }
-
-    /**
-     * Not supported, will be implemented as BATCH
+     * Checks whether the connection is under a transaction
      *
      * @author  David Hübner <david.hubner at google.com>
      * @return  bool
      */
     public function isUnderTransaction()
     {
-        return false;
+        return ($this->_transactionLevel ? true : false);
     }
 
 }
