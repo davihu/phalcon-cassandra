@@ -1,0 +1,34 @@
+{
+    "name": "davihu/phalcon-cassandra",
+    "type": "library",
+    "description": "Apache Cassandra database adapter for Phalcon Framework",
+    "keywords": ["framework", "phalcon", "cassandra"],
+    "license": "New BSD License",
+    "authors": [
+        {
+            "name": "David Hübner",
+            "email": "david.hubner@gmail.com",
+            "homepage": "https://github.com/davihu"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/davihu/phalcon-cassandra/issues",
+        "source": "https://github.com/davihu/phalcon-cassandra"
+    },
+    "require": {
+        "php": ">=5.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "~4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "PhalconCassandra\\": "src/PhalconCassandra/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PhalconCassandra\\Tests\\": "tests/"
+        }
+    }
+}
