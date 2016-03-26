@@ -1,8 +1,8 @@
 {
     "name": "davihu/phalcon-cassandra",
     "type": "library",
-    "description": "Apache Cassandra database adapter for Phalcon Framework",
-    "keywords": ["framework", "phalcon", "cassandra"],
+    "description": "Apache Cassandra database adapter for Phalcon Framework, under development now, do not use yet",
+    "keywords": ["framework", "phalcon", "cassandra", "db", "adapter"],
     "license": "New BSD License",
     "authors": [
         {
