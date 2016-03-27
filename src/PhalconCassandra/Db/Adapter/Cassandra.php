@@ -42,17 +42,16 @@ class Cassandra extends Adapter implements AdapterInterface
     protected $_batch;
 
     /**
-     * @var int default consistency level
+     * @var int $_defaultConsistency - default consistency level
      */
     protected $_defaultConsistency = \Cassandra::CONSISTENCY_LOCAL_ONE;
 
     /**
-     * @var int next execute or query consistency level
+     * @var int $_consistency - next execute or query consistency level
      */
     protected $_consistency;
 
     /**
-     *
      * @var int $_affectedRows - last affected rows
      */
     protected $_affectedRows;
@@ -67,6 +66,8 @@ class Cassandra extends Adapter implements AdapterInterface
     public function __construct($descriptor)
     {
         $this->_transactionLevel = 0;
+        $this->_type = 'cassandra';
+        $this->_dialectType = 'cassandra';
         $descriptor['dialectClass'] = 'PhalconCassandra\\Db\\Dialect\\Cassandra';
         parent::__construct($descriptor);
     }
@@ -107,7 +108,7 @@ class Cassandra extends Adapter implements AdapterInterface
 
         if (isset($descriptor['consistency'])) {
             $cluster->withDefaultConsistency($descriptor['consistency']);
-            $this->_defaultConsistency = $descriptor['consistency'];
+            $this->setDefaultConsistency($descriptor['consistency']);
         }
 
         if (isset($descriptor['pageSize'])) {
@@ -167,7 +168,7 @@ class Cassandra extends Adapter implements AdapterInterface
     }
 
     /**
-     * Returns current connection session handler
+     * Returns current Cassandra session handler
      *
      * @author  David Hübner <david.hubner at google.com>
      * @return  \Cassandra\Session | null
@@ -300,11 +301,34 @@ class Cassandra extends Adapter implements AdapterInterface
      * Sets consistency level for next statement execution
      * 
      * @author  David Hübner <david.hubner at google.com>
-     * @return  self
+     * @return  \PhalconCassandra\Db\Adapter\Cassandra
      */
     public function setConsistency($consistency)
     {
         $this->_consistency = $consistency;
+        return $this;
+    }
+
+    /**
+     * Gets default consistency level
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @return  int
+     */
+    public function getDefaultConsistency()
+    {
+        return $this->_defaultConsistency;
+    }
+
+    /**
+     * Sets default consistency level
+     * 
+     * @author  David Hübner <david.hubner at google.com>
+     * @return  \PhalconCassandra\Db\Adapter\Cassandra
+     */
+    public function setDefaultConsistency($consistency)
+    {
+        $this->_defaultConsistency = $consistency;
         return $this;
     }
 
@@ -360,11 +384,11 @@ class Cassandra extends Adapter implements AdapterInterface
      * Not supported
      *
      * @author  David Hübner <david.hubner at google.com>
-     * @return  null
+     * @return  bool
      */
     public function lastInsertId($sequenceName = null)
     {
-        return null;
+        return false;
     }
 
     /**
