@@ -26,6 +26,11 @@ use PhalconCassandra\Db\Exception\Cassandra as CException,
 class Cassandra extends Dialect implements DialectInterface
 {
 
+    public function limit($sqlQuery, $number)
+    {
+        return $sqlQuery;
+    }
+
     public function listTables($schemaName = null)
     {
         
@@ -150,9 +155,15 @@ class Cassandra extends Dialect implements DialectInterface
         throw new CException('Not nupported - drop primary key');
     }
 
+    /**
+     * No CQL syntax for describing a table
+     *
+     * @author  David Hübner <david.hubner at google.com>
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
+     */
     public function describeColumns($table, $schema = null)
     {
-        
+        throw new CException('Not nupported - describe columns');
     }
 
     public function getColumnDefinition(ColumnInterface $column)

@@ -11,6 +11,7 @@
 namespace PhalconCassandra\Db\Adapter;
 
 use PhalconCassandra\Db\Exception\Cassandra as CException,
+    PhalconCassandra\Db\Column\Cassandra as CColumn,
     Phalcon\Db\Adapter,
     Phalcon\Db\AdapterInterface,
     Phalcon\Db\ResultInterface,
@@ -18,6 +19,9 @@ use PhalconCassandra\Db\Exception\Cassandra as CException,
     Cassandra\Cluster\Builder,
     Cassandra\SimpleStatement,
     Cassandra\BatchStatement,
+    Cassandra\Table as BaseTable,
+    Cassandra\Column as BaseColumn,
+    Cassandra\Type as BaseType,
     Cassandra\ExecutionOptions,
     Cassandra\Exception as BaseException;
 
@@ -35,6 +39,11 @@ class Cassandra extends Adapter implements AdapterInterface
      * @var \Cassandra\Session $_session - cassandra connection session 
      */
     protected $_session;
+
+    /**
+     * @var array $_schemaCache - cached cassandra schemas 
+     */
+    protected $_schemaCache;
 
     /**
      * @var \Cassandra\BatchStatement $_batch - transaction batch 
@@ -58,8 +67,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Creates new Cassandra adapter
-     *  
-     * @author  David Hübner <david.hubner at google.com>
      * @param   array $descriptor - connection description
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
@@ -68,14 +75,13 @@ class Cassandra extends Adapter implements AdapterInterface
         $this->_transactionLevel = 0;
         $this->_type = 'cassandra';
         $this->_dialectType = 'cassandra';
+        $this->_schemaCache = array();
         $descriptor['dialectClass'] = 'PhalconCassandra\\Db\\Dialect\\Cassandra';
         parent::__construct($descriptor);
     }
 
     /**
      * Establishes connection to existing cluster
-     *  
-     * @author  David Hübner <david.hubner at google.com>
      * @param   array $descriptor - connection description, default null
      * @return  bool   
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
@@ -154,8 +160,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Closes actual connection session to the cluster
-     *  
-     * @author  David Hübner <david.hubner at google.com>
      * @return  bool   
      */
     public function close()
@@ -169,8 +173,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Returns current Cassandra session handler
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @return  \Cassandra\Session | null
      */
     public function getInternalHandler()
@@ -181,8 +183,6 @@ class Cassandra extends Adapter implements AdapterInterface
     /**
      * Sends SQL statements to the database server returning the success state.
      * Use this method only when the SQL statement sent to the server is returning rows
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @param   string $cqlStatement - CQL statement
      * @param   array $bindParams - bind parameters, default null
      * @param   array $bindTypes - bind types, default null
@@ -192,6 +192,11 @@ class Cassandra extends Adapter implements AdapterInterface
     public function query($cqlStatement, $bindParams = null, $bindTypes = null)
     {
         $statement = $this->_prepareStatement($cqlStatement, $bindParams, $bindTypes);
+
+        // @todo pager
+        if (isset($bindParams['APL0'])) {
+            unset($bindParams['APL0']);
+        }
 
         $params = [
             'consistency' => $this->getConsistency()
@@ -219,8 +224,6 @@ class Cassandra extends Adapter implements AdapterInterface
     /**
      * Sends SQL statements to the database server returning the success state.
      * Use this method only when the SQL statement sent to the server doesn't return any rows
-     * 
-     * @author  David Hübner <david.hubner at google.com>
      * @param   string $cqlStatement - CQL statement
      * @param   array $bindParams - bind parameters, default null
      * @param   array $bindTypes - bind types, default null
@@ -260,9 +263,7 @@ class Cassandra extends Adapter implements AdapterInterface
     }
 
     /**
-     * Internally executes CQL statement
-     * 
-     * @author  David Hübner <david.hubner at google.com>
+     * Prepares statement
      * @param   string $cqlStatement - CQL statement
      * @param   array $bindParams - bind parameters
      * @param   array $bindTypes - bind types
@@ -270,6 +271,8 @@ class Cassandra extends Adapter implements AdapterInterface
      */
     protected function _prepareStatement($cqlStatement, $bindParams, $bindTypes)
     {
+        $cqlStatement = preg_replace('!(\w+\.)(\w+)!', '\\2', $cqlStatement);
+
         if ($this->_eventsManager instanceof ManagerInterface) {
             $this->_sqlStatement = $cqlStatement;
             $this->_sqlVariables = $bindParams;
@@ -288,8 +291,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Gets consistency level for next statement execution
-     * 
-     * @author  David Hübner <david.hubner at google.com>
      * @return  int
      */
     public function getConsistency()
@@ -299,8 +300,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Sets consistency level for next statement execution
-     * 
-     * @author  David Hübner <david.hubner at google.com>
      * @return  \PhalconCassandra\Db\Adapter\Cassandra
      */
     public function setConsistency($consistency)
@@ -311,8 +310,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Gets default consistency level
-     * 
-     * @author  David Hübner <david.hubner at google.com>
      * @return  int
      */
     public function getDefaultConsistency()
@@ -322,8 +319,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Sets default consistency level
-     * 
-     * @author  David Hübner <david.hubner at google.com>
      * @return  \PhalconCassandra\Db\Adapter\Cassandra
      */
     public function setDefaultConsistency($consistency)
@@ -333,22 +328,7 @@ class Cassandra extends Adapter implements AdapterInterface
     }
 
     /**
-     * Returns an array of Column objects describing a table
-     *
-     * @author  David Hübner <david.hubner at google.com>
-     * @param   string $table
-     * @param   string $schema
-     * @return  \Phalcon\Db\ColumnInterface[] 
-     */
-    public function describeColumns($table, $schema = null)
-    {
-        throw new CException('Not supported');
-    }
-
-    /**
      * Escapes a column/table/schema name
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @param   string $identifier
      * @return  string
      */
@@ -359,8 +339,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Escapes a string value
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @param   string $str
      * @return  string
      */
@@ -371,8 +349,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Returns 0 if last executed query failed or 1 if was successfull
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @return  int
      */
     public function affectedRows()
@@ -381,9 +357,7 @@ class Cassandra extends Adapter implements AdapterInterface
     }
 
     /**
-     * Not supported
-     *
-     * @author  David Hübner <david.hubner at google.com>
+     * Last insert id is not supported by Cassandra
      * @return  bool
      */
     public function lastInsertId($sequenceName = null)
@@ -393,8 +367,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Starts new batch
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @param   int $batchType - default \Cassandra::BATCH_LOGGED
      * @return  bool
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
@@ -420,8 +392,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Executes active batch
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @return  bool
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
@@ -457,8 +427,6 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Discards active batch
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @return  bool
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
@@ -483,13 +451,185 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Checks whether the connection is under a transaction
-     *
-     * @author  David Hübner <david.hubner at google.com>
      * @return  bool
      */
     public function isUnderTransaction()
     {
         return ($this->_transactionLevel ? true : false);
+    }
+
+    /**
+     * Checks if table exists in given keyspace
+     * @param   string $tableName - table name
+     * @param   string $keyspaceName - keyspace name, default null
+     * @return  bool
+     */
+    public function tableExists($tableName, $keyspaceName = null)
+    {
+        if (empty($keyspaceName)) {
+            $keyspaceName = $this->_descriptor['keyspace'];
+        }
+
+        $keyspace = $this->_session->schema()->keyspace($keyspaceName);
+
+        if (empty($keyspace)) {
+            return false;
+        }
+
+        $table = $keyspace->table($tableName);
+
+        return ($table instanceof BaseTable ? true : false);
+    }
+
+    /**
+     * Returns an array of Column objects describing a table
+     * @param   string $tableName
+     * @param   string $keyspaceName
+     * @return  \Phalcon\Db\ColumnInterface[] 
+     * @throws  \PhalconCassandra\Db\Exception\Cassandra
+     */
+    public function describeColumns($tableName, $keyspaceName = null)
+    {
+        if (empty($keyspaceName)) {
+            $keyspaceName = $this->_descriptor['keyspace'];
+        }
+
+        $keyspace = $this->_session->schema()->keyspace($keyspaceName);
+
+        if (empty($keyspace)) {
+            throw new CException('Keyspace "' . $keyspaceName . '" not exists');
+        }
+
+        $table = $keyspace->table($tableName);
+
+        if (empty($table)) {
+            throw new CException('Table "' . $tableName . '" not exists');
+        }
+
+        $columns = $table->columns();
+
+        $result = [];
+        $prevCol = null;
+
+        foreach ($columns as $col) {
+            $result[] = $this->_describeColumn($col, $prevCol, $tableName, $keyspaceName);
+            $prevCol = $col;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Describes one cassandra column
+     * @param   \Cassandra\Column $col
+     * @param   \Cassandra\Column | null $prevCol
+     * @param   string $tableName
+     * @param   string $keyspaceName
+     * @return  \Phalcon\Db\ColumnInterface
+     */
+    protected function _describeColumn(BaseColumn $col, $prevCol, $tableName, $keyspaceName)
+    {
+        $name = $col->name();
+
+        $def = [
+            'reversed' => $col->isReversed(),
+            'static' => $col->isStatic(),
+            'frozen' => $col->isFrozen()
+        ];
+
+        list($def['primary'], $def['partitionKey'], $def['clusteringKey']) = $this->_getColumnKeyData($name, $tableName, $keyspaceName);
+        list($def['type'], $def['bindType'], $def['isNumeric']) = $this->_getColumnTypeData($col->type());
+
+        if ($prevCol instanceof BaseColumn) {
+            $def['after'] = $prevCol->name();
+        } else {
+            $def['first'] = true;
+        }
+
+        return new CColumn($name, $def);
+    }
+
+    /**
+     * Gets column key data, reads data from system.schema_columns
+     * Need to have read access to this system table
+     * @param   string $columnName
+     * @param   string $tableName
+     * @param   string $keyspaceName
+     * @return  array
+     */
+    protected function _getColumnKeyData($columnName, $tableName, $keyspaceName)
+    {
+        $statement = new SimpleStatement(
+            'SELECT type FROM system.schema_columns WHERE keyspace_name = ? AND columnfamily_name = ? AND column_name = ?'
+        );
+
+        $params = [
+            'consistency' => \Cassandra::CONSISTENCY_LOCAL_ONE,
+            'arguments' => [$keyspaceName, $tableName, $columnName]
+        ];
+
+        $result = $this->_session->execute($statement, new ExecutionOptions($params));
+
+        if ($result[0]['type'] == 'partition_key') {
+            return [true, true, false];
+        }
+
+        if ($result[0]['type'] == 'clustering_key') {
+            return [true, true, true];
+        }
+
+        return [false, false, false];
+    }
+
+    /**
+     * Gets column type data
+     * @param   \Cassandra\Type $type
+     * @return  array
+     */
+    protected function _getColumnTypeData(BaseType $type)
+    {
+        switch ($type->name()) {
+            case 'int':
+                return [CColumn::TYPE_INTEGER, CColumn::BIND_PARAM_INT, true];
+            case 'varchar':
+                return [CColumn::TYPE_VARCHAR, CColumn::BIND_PARAM_STR, false];
+            case 'text':
+                return [CColumn::TYPE_TEXT, CColumn::BIND_PARAM_STR, false];
+            case 'timestamp':
+                return [CColumn::TYPE_TIMESTAMP, CColumn::BIND_PARAM_INT, true];
+            case 'boolean':
+                return [CColumn::TYPE_BOOLEAN, CColumn::BIND_PARAM_BOOL, false];
+            case 'decimal':
+                return [CColumn::TYPE_DECIMAL, CColumn::BIND_PARAM_DECIMAL, true];
+            case 'double':
+                return [CColumn::TYPE_DOUBLE, CColumn::BIND_PARAM_DECIMAL, true];
+            case 'uuid':
+                return [CColumn::TYPE_UUID, CColumn::BIND_PARAM_UUID, false];
+            case 'timeuuid':
+                return [CColumn::TYPE_TIMEUUID, CColumn::BIND_PARAM_UUID, false];
+            case 'ascii':
+                return [CColumn::TYPE_ASCII, CColumn::BIND_PARAM_STR, false];
+            case 'bigint':
+                return [CColumn::TYPE_BIGINTEGER, CColumn::BIND_PARAM_INT, true];
+            case 'blob':
+                return [CColumn::TYPE_BLOB, CColumn::BIND_PARAM_BLOB, false];
+            case 'counter':
+                return [CColumn::TYPE_COUNTER, CColumn::BIND_PARAM_INT, true];
+            case 'float':
+                return [CColumn::TYPE_FLOAT, CColumn::BIND_PARAM_DECIMAL, true];
+            case 'inet':
+                return [CColumn::TYPE_INET, CColumn::BIND_PARAM_STR, false];
+            case 'list':
+                return [CColumn::TYPE_LIST, CColumn::BIND_PARAM_ARRAY, false];
+            case 'map':
+                return [CColumn::TYPE_MAP, CColumn::BIND_PARAM_ARRAY, false];
+            case 'set':
+                return [CColumn::TYPE_SET, CColumn::BIND_PARAM_ARRAY, false];
+            case 'varint':
+                return [CColumn::TYPE_VARINT, CColumn::BIND_PARAM_STR, false];
+            default:
+                throw new CException('Unsupported data type ' . $type->name());
+        }
     }
 
 }
