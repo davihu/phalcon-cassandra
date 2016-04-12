@@ -10,11 +10,11 @@
 
 namespace PhalconCassandra\Db\Dialect;
 
-use PhalconCassandra\Db\Exception\Cassandra as CException,
-    Phalcon\Db\Dialect,
-    Phalcon\Db\DialectInterface,
-    Phalcon\Db\IndexInterface,
-    Phalcon\Db\ColumnInterface;
+use PhalconCassandra\Db\Exception\Cassandra as CException;
+use Phalcon\Db\Dialect;
+use Phalcon\Db\DialectInterface;
+use Phalcon\Db\IndexInterface;
+use Phalcon\Db\ColumnInterface;
 
 /**
  * Cassandra DB dialect for Phalcon
@@ -33,27 +33,22 @@ class Cassandra extends Dialect implements DialectInterface
 
     public function listTables($schemaName = null)
     {
-        
     }
 
     public function tableExists($tableName, $schemaName = null)
     {
-        
     }
 
     public function tableOptions($table, $schema = null)
     {
-        
     }
 
-    public function createTable($tableName, $schemaName, Array $definition)
+    public function createTable($tableName, $schemaName, array $definition)
     {
-        
     }
 
     public function dropTable($tableName, $schemaName)
     {
-        
     }
 
     /**
@@ -84,7 +79,7 @@ class Cassandra extends Dialect implements DialectInterface
      * @author  David Hübner <david.hubner at google.com>
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
-    public function createView($viewName, Array $definition, $schemaName = null)
+    public function createView($viewName, array $definition, $schemaName = null)
     {
         throw new CException('Not nupported - drop view');
     }
@@ -168,22 +163,18 @@ class Cassandra extends Dialect implements DialectInterface
 
     public function getColumnDefinition(ColumnInterface $column)
     {
-        
     }
 
     public function addColumn($tableName, $schemaName, ColumnInterface $column)
     {
-        
     }
 
     public function modifyColumn($tableName, $schemaName, ColumnInterface $column, ColumnInterface $currentColumn = null)
     {
-        
     }
 
     public function dropColumn($tableName, $schemaName, $columnName)
     {
-        
     }
 
     /**
@@ -295,5 +286,4 @@ class Cassandra extends Dialect implements DialectInterface
     {
         throw new CException('Not nupported - shared lock');
     }
-
 }

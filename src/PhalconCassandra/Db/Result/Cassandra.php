@@ -225,7 +225,7 @@ class Cassandra implements ResultInterface
      * @param   array $result
      * @return  mixed
      */
-    protected function result2column(Array $result)
+    protected function result2column(array $result)
     {
         return current($result);
     }
@@ -235,7 +235,7 @@ class Cassandra implements ResultInterface
      * @param   array $result
      * @return  array
      */
-    protected function result2num(Array $result)
+    protected function result2num(array $result)
     {
         return array_values($result);
     }
@@ -245,7 +245,7 @@ class Cassandra implements ResultInterface
      * @param   array $result
      * @return  \stdClass
      */
-    protected function result2obj(Array $result)
+    protected function result2obj(array $result)
     {
         $obj = new \stdClass();
         foreach ($result as $key => $val) {
@@ -253,5 +253,4 @@ class Cassandra implements ResultInterface
         }
         return $obj;
     }
-
 }

@@ -174,5 +174,4 @@ class Cassandra extends BaseColumn
     {
         return $this->_frozen;
     }
-
 }

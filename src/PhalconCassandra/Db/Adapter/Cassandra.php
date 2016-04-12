@@ -636,5 +636,4 @@ class Cassandra extends Adapter implements AdapterInterface
                 throw new CException('Unsupported data type ' . $type->name());
         }
     }
-
 }

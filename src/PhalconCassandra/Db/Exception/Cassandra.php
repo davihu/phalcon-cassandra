@@ -21,5 +21,4 @@ use Phalcon\Db\Exception as DbException;
  */
 class Cassandra extends DbException
 {
-    
 }
