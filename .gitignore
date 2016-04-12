@@ -3,3 +3,4 @@
 /composer.lock
 /cassandra.log
 /test.php
+tests/_output/*

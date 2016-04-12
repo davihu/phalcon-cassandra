@@ -10,24 +10,24 @@
 
 namespace PhalconCassandra\Db\Adapter;
 
-use PhalconCassandra\Db\Exception\Cassandra as CException,
-    PhalconCassandra\Db\Column\Cassandra as CColumn,
-    Phalcon\Db\Adapter,
-    Phalcon\Db\AdapterInterface,
-    Phalcon\Db\ResultInterface,
-    Phalcon\Events\ManagerInterface,
-    Cassandra\Cluster\Builder,
-    Cassandra\SimpleStatement,
-    Cassandra\BatchStatement,
-    Cassandra\Table as BaseTable,
-    Cassandra\Column as BaseColumn,
-    Cassandra\Type as BaseType,
-    Cassandra\ExecutionOptions,
-    Cassandra\Exception as BaseException;
+use PhalconCassandra\Db\Exception\Cassandra as CException;
+use PhalconCassandra\Db\Column\Cassandra as CColumn;
+use PhalconCassandra\Db\Result\Cassandra as CResult;
+use Phalcon\Db\Adapter;
+use Phalcon\Db\AdapterInterface;
+use Phalcon\Events\ManagerInterface;
+use Cassandra\Cluster\Builder;
+use Cassandra\SimpleStatement;
+use Cassandra\BatchStatement;
+use Cassandra\Table as BaseTable;
+use Cassandra\Column as BaseColumn;
+use Cassandra\Type as BaseType;
+use Cassandra\ExecutionOptions;
+use Cassandra\Exception as BaseException;
 
 /**
  * Cassandra DB adapter for Phalcon
- * 
+ *
  * @author     David Hübner <david.hubner at google.com>
  * @version    Release: @package_version@
  * @since      Release 1.0
@@ -36,17 +36,17 @@ class Cassandra extends Adapter implements AdapterInterface
 {
 
     /**
-     * @var \Cassandra\Session $_session - cassandra connection session 
+     * @var \Cassandra\Session $_session - cassandra connection session
      */
     protected $_session;
 
     /**
-     * @var array $_schemaCache - cached cassandra schemas 
+     * @var array $_schemaCache - cached cassandra schemas
      */
     protected $_schemaCache;
 
     /**
-     * @var \Cassandra\BatchStatement $_batch - transaction batch 
+     * @var \Cassandra\BatchStatement $_batch - transaction batch
      */
     protected $_batch;
 
@@ -67,8 +67,7 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Creates new Cassandra adapter
-     * @param   array $descriptor - connection description
-     * @throws  \PhalconCassandra\Db\Exception\Cassandra
+     * @param array $descriptor - connection description
      */
     public function __construct($descriptor)
     {
@@ -76,14 +75,16 @@ class Cassandra extends Adapter implements AdapterInterface
         $this->_type = 'cassandra';
         $this->_dialectType = 'cassandra';
         $this->_schemaCache = array();
-        $descriptor['dialectClass'] = 'PhalconCassandra\\Db\\Dialect\\Cassandra';
+        if (empty($descriptor['dialectClass'])) {
+            $descriptor['dialectClass'] = 'PhalconCassandra\\Db\\Dialect\\Cassandra';
+        }
         parent::__construct($descriptor);
     }
 
     /**
      * Establishes connection to existing cluster
      * @param   array $descriptor - connection description, default null
-     * @return  bool   
+     * @return  bool
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
     public function connect($descriptor = null)
@@ -160,7 +161,7 @@ class Cassandra extends Adapter implements AdapterInterface
 
     /**
      * Closes actual connection session to the cluster
-     * @return  bool   
+     * @return  bool
      */
     public function close()
     {
@@ -216,9 +217,13 @@ class Cassandra extends Adapter implements AdapterInterface
             $this->_eventsManager->fire('db:afterQuery', $this, $bindParams);
         }
 
+        $finalResult = new CResult(
+            $this, $result, $cqlStatement, $bindParams, $bindTypes, $this->getConsistency()
+        );
+
         $this->_consistency = null;
 
-        var_dump($result->first());
+        return $finalResult;
     }
 
     /**
@@ -485,7 +490,7 @@ class Cassandra extends Adapter implements AdapterInterface
      * Returns an array of Column objects describing a table
      * @param   string $tableName
      * @param   string $keyspaceName
-     * @return  \Phalcon\Db\ColumnInterface[] 
+     * @return  \Phalcon\Db\ColumnInterface[]
      * @throws  \PhalconCassandra\Db\Exception\Cassandra
      */
     public function describeColumns($tableName, $keyspaceName = null)
